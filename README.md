@@ -10,14 +10,14 @@ dojo-orm = { git = "https://github.com/tokenspan/dojo-orm" }
 ```rust
 #[tokio::main]
 async fn main() {
-    #[derive(Debug, ToSql, FromSql)]
+    #[derive(Debug, Type)]
     #[postgres(name = "user_role", rename_all = "lowercase")]
     enum UserRole {
         Admin,
         User,
     }
 
-    #[derive(Debug, Deserialize, Serialize, EmbeddedModel)]
+    #[derive(Debug, EmbeddedModel)]
     struct Profile {
         age: i32,
         address: String,
@@ -31,8 +31,8 @@ async fn main() {
         email: String,
         profile: Profile,
         role: UserRole,
-        created_at: chrono::NaiveDateTime,
-        updated_at: chrono::NaiveDateTime,
+        created_at: NaiveDateTime,
+        updated_at: NaiveDateTime,
     }
 
     let user = db.insert(&input).await.unwrap();
