@@ -24,7 +24,7 @@ impl<'a> Database<'a> {
         }
     }
 
-    pub async fn insert<T: Model + Clone + From<Row>>(&'a self, data: &'a T) -> anyhow::Result<T> {
+    pub async fn insert<T: Model>(&'a self, data: &'a T) -> anyhow::Result<T> {
         let mut query = "INSERT INTO ".to_string();
         query.push_str(T::NAME);
         query.push_str(" (");
@@ -44,9 +44,9 @@ impl<'a> Database<'a> {
         query.push_str(T::COLUMNS.join(", ").as_str());
 
         let mut conn = self.pool.get().await?;
-        let row = conn.query_one(query.as_str(), &params).await?.into();
+        let row = conn.query_one(query.as_str(), &params).await?;
 
-        Ok(row)
+        Ok(T::from_row(row)?)
     }
 
     pub fn update<T: Model, U: UpdateModel>(&'a self, data: &'a U) -> WhereUpdateClause<'a, T, U> {

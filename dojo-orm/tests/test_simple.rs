@@ -63,8 +63,8 @@ async fn test_simple() {
 
     let input = User {
         id: Uuid::new_v4(),
-        name: "linh".to_string(),
-        email: "linh@gmail.com".to_string(),
+        name: "linh1".to_string(),
+        email: "linh1@gmail.com".to_string(),
         role: UserRole::Admin,
         profile: Profile {
             age: 20,
@@ -89,17 +89,20 @@ async fn test_simple() {
 
     let db = Database::new(&pool);
 
-    let input = UpdateUser {
-        name: Some("John1".to_string()),
-    };
-    let id = Uuid::parse_str("ae686215-9676-4657-b239-339699049f28").unwrap();
-    let row = db
-        .update::<User, _>(&input)
-        .where_by(and(vec![eq("id", &id)]))
-        .execute()
-        .await
-        .unwrap();
-    println!("row: {:?}", row);
+    let user = db.insert(&input).await.unwrap();
+    println!("user: {:?}", user);
+
+    // let input = UpdateUser {
+    //     name: Some("John1".to_string()),
+    // };
+    // let id = Uuid::parse_str("ae686215-9676-4657-b239-339699049f28").unwrap();
+    // let row = db
+    //     .update::<User, _>(&input)
+    //     .where_by(and(vec![eq("id", &id)]))
+    //     .execute()
+    //     .await
+    //     .unwrap();
+    // println!("row: {:?}", row);
 
     // let id = Uuid::parse_str("c4cf875a-7861-4ae8-a9ff-21d040ed0d7b").unwrap();
     // let cursor = Cursor::new("created_at", 1);
