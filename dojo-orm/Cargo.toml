@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-graphql = "6.0.11"
+async-graphql = { git = "https://github.com/linrium/async-graphql", branch = "support-axum-0.7-custom", features = ["tokio", "chrono", "dataloader", "tracing", "uuid"] }
 base64ct = { version = "1.6.0", features = ["alloc"] }
 postgres-types = { version = "0.2.6", features = ["derive", "with-serde_json-1"] }
 postgres-openssl = "0.5.0"
@@ -13,7 +13,7 @@ serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 bb8 = "0.8.1"
 bb8-postgres = "0.8.1"
-anyhow = "1.0.77"
+anyhow = "1.0.52"
 thiserror = "1.0.52"
 refinery = { version = "0.8.11", features = ["tokio-postgres"] }
 uuid = { version = "1.6.1", features = ["v4", "fast-rng", "macro-diagnostics"] }

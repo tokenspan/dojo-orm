@@ -6,14 +6,7 @@ struct ModelStructAttrs {
     name: String,
 }
 
-#[derive(deluxe::ExtractAttributes)]
-#[deluxe(attributes(dojo))]
-struct ModelFieldAttributes {
-    #[deluxe(default = false)]
-    embedded: bool,
-}
-
-pub fn model_derive_macro_impl(
+pub fn expand_model_derive(
     input: proc_macro2::TokenStream,
 ) -> deluxe::Result<proc_macro2::TokenStream> {
     // Parse the input tokens into a syntax tree
@@ -53,7 +46,7 @@ pub fn model_derive_macro_impl(
                 #(#field_idents_str),*
             ];
 
-            fn params(&self) -> Vec<&(dyn postgres_types::ToSql + Sync)> {
+            fn params(&self) -> Vec<&(dyn dojo_orm::types::ToSql + Sync)> {
                 vec![#(&self.#field_idents),*]
             }
 

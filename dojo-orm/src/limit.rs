@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use postgres_types::ToSql;
+use crate::types::ToSql;
 
 use crate::model::Model;
 use crate::ops::Op;

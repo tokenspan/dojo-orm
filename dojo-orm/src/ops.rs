@@ -1,6 +1,7 @@
-use crate::order_by::Order;
-use postgres_types::ToSql;
 use std::borrow::Cow;
+
+use crate::order_by::Order;
+use crate::types::ToSql;
 
 #[derive(Debug)]
 pub struct OpValue<'a> {
@@ -20,7 +21,7 @@ impl<'a> Op<'a> {
     pub fn sql(&self, params_index: &mut usize) -> (String, Vec<&'a (dyn ToSql + Sync)>) {
         match self {
             Op::Value(op_value) => {
-                let mut query = format!("{} {} ${}", op_value.column, op_value.op, params_index);
+                let query = format!("{} {} ${}", op_value.column, op_value.op, params_index);
                 let params = vec![op_value.value];
                 *params_index += 1;
                 (query, params)
@@ -69,10 +70,18 @@ pub fn eq<'a, T: ToSql + Sync>(column: &'a str, value: &'a T) -> Op<'a> {
     })
 }
 
+pub fn in_list<'a, T: ToSql + Sync>(column: &'a str, values: &'a Vec<T>) -> Op<'a> {
+    Op::Value(OpValue {
+        column: column.into(),
+        op: "IN",
+        value: values,
+    })
+}
+
 pub fn asc(column: &str) -> (&str, Order) {
     (column, Order::Asc)
 }
 
-pub fn desc(column: &'static str) -> (String, Order) {
-    (column.to_string(), Order::Desc)
+pub fn desc(column: &str) -> (&str, Order) {
+    (column, Order::Desc)
 }

@@ -1,4 +1,4 @@
-use postgres_types::ToSql;
+use crate::types::ToSql;
 
 pub trait Model {
     const NAME: &'static str;

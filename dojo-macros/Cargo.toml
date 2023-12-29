@@ -14,7 +14,10 @@ proc-macro2 = "1.0.70"
 uuid = { version = "1.6.1", features = ["v4"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 async-trait = "0.1.75"
-anyhow = "1.0.77"
+anyhow = "1.0.52"
+postgres-types = { version = "0.2.6", features = ["derive", "with-serde_json-1"] }
+convert_case = "0.6.0"
+bytes = "1.5.0"
 
 [dependencies.tokio-postgres]
 version = "0.7.2"

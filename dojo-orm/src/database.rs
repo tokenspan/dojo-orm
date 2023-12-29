@@ -1,30 +1,42 @@
+use std::marker::PhantomData;
+
 use crate::model::{Model, UpdateModel};
+use crate::pagination::{Cursor, CursorExt};
+use crate::pool::*;
 use crate::where_select::WhereSelectClause;
 use crate::where_update::WhereUpdateClause;
-use bb8::Pool;
-use bb8_postgres::PostgresConnectionManager;
-use std::marker::PhantomData;
-use tokio_postgres::{NoTls, Row};
 
-pub struct Database<'a> {
-    pool: &'a Pool<PostgresConnectionManager<NoTls>>,
+#[derive(Clone)]
+pub struct Database {
+    pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
-impl<'a> Database<'a> {
-    pub fn new(pool: &'a Pool<PostgresConnectionManager<NoTls>>) -> Self {
-        Self { pool }
+impl Database {
+    pub async fn new(url: &str) -> anyhow::Result<Self> {
+        let manager = PostgresConnectionManager::new_from_stringlike(url, NoTls)?;
+        let pool = Pool::builder().build(manager).await?;
+
+        Ok(Self { pool })
     }
 
-    pub fn bind<T: Model>(&'a self) -> WhereSelectClause<'a, T> {
+    pub async fn get(&self) -> anyhow::Result<PooledConnection<PostgresConnectionManager<NoTls>>> {
+        Ok(self.pool.get().await?)
+    }
+
+    pub fn bind<T>(&self) -> WhereSelectClause<T>
+    where
+        T: Model + CursorExt<Cursor> + Sync + Send,
+    {
         WhereSelectClause {
             pool: &self.pool,
+            is_delete: false,
             params: vec![],
             ops: vec![],
             _t: PhantomData,
         }
     }
 
-    pub async fn insert<T: Model>(&'a self, data: &'a T) -> anyhow::Result<T> {
+    pub async fn insert<T: Model>(&self, data: &T) -> anyhow::Result<T> {
         let mut query = "INSERT INTO ".to_string();
         query.push_str(T::NAME);
         query.push_str(" (");
@@ -43,13 +55,16 @@ impl<'a> Database<'a> {
         query.push_str(") RETURNING ");
         query.push_str(T::COLUMNS.join(", ").as_str());
 
-        let mut conn = self.pool.get().await?;
+        let conn = self.pool.get().await?;
         let row = conn.query_one(query.as_str(), &params).await?;
 
         Ok(T::from_row(row)?)
     }
 
-    pub fn update<T: Model, U: UpdateModel>(&'a self, data: &'a U) -> WhereUpdateClause<'a, T, U> {
+    pub fn update<'a, T: Model, U: UpdateModel>(
+        &'a self,
+        data: &'a U,
+    ) -> WhereUpdateClause<'a, T, U> {
         let params = data.params();
         WhereUpdateClause {
             pool: &self.pool,
@@ -57,6 +72,16 @@ impl<'a> Database<'a> {
             ops: vec![],
             _t: PhantomData,
             _u: PhantomData,
+        }
+    }
+
+    pub fn delete<T: Model>(&self) -> WhereSelectClause<T> {
+        WhereSelectClause {
+            pool: &self.pool,
+            is_delete: true,
+            params: vec![],
+            ops: vec![],
+            _t: PhantomData,
         }
     }
 }

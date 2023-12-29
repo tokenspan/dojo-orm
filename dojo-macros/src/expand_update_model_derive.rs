@@ -25,7 +25,7 @@ fn extract_update_model_field_attributes(
     Ok(field_attrs)
 }
 
-pub fn update_model_derive_macro_impl(
+pub fn expand_update_model_derive(
     input: proc_macro2::TokenStream,
 ) -> deluxe::Result<proc_macro2::TokenStream> {
     // Parse the input tokens into a syntax tree
@@ -68,8 +68,8 @@ pub fn update_model_derive_macro_impl(
         impl #impl_generics dojo_orm::UpdateModel for #ident #ty_generics #where_clause {
             const COLUMNS: &'static [&'static str] = &["name"];
 
-            fn params(&self) -> Vec<&(dyn postgres_types::ToSql + Sync)> {
-                let mut params: Vec<&(dyn postgres_types::ToSql + Sync)> = Vec::new();
+            fn params(&self) -> Vec<&(dyn dojo_orm::types::ToSql + Sync)> {
+                let mut params: Vec<&(dyn dojo_orm::types::ToSql + Sync)> = Vec::new();
 
                 #(#params)*
 

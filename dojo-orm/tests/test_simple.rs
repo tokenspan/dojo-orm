@@ -3,18 +3,11 @@ use std::fmt::Display;
 use std::io::Read;
 use std::ops::DerefMut;
 
-use bb8::Pool;
-use bb8_postgres::PostgresConnectionManager;
-use bytes::BufMut;
-use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
-use tokio_postgres::NoTls;
 use uuid::Uuid;
 
-use dojo_macros::{EmbeddedModel, Model, UpdateModel};
-use dojo_orm::database::Database;
-use dojo_orm::ops::{and, eq};
-use dojo_orm::{Model, UpdateModel};
+use dojo_macros::{EmbeddedModel, Model, Type, UpdateModel};
+use dojo_orm::{Database, Model, UpdateModel};
 
 mod embedded {
     use refinery::embed_migrations;
@@ -25,19 +18,17 @@ mod embedded {
 #[tokio::test]
 async fn test_simple() {
     let url = "postgresql://postgres:123456@localhost:5432/test";
-    let manager = PostgresConnectionManager::new_from_stringlike(url, NoTls).unwrap();
-    let pool = Pool::builder().build(manager).await.unwrap();
+    let db = Database::new(url).await.unwrap();
 
-    let mut conn = pool.get().await.unwrap();
-
+    let mut conn = db.get().await.unwrap();
     let client = conn.deref_mut();
     embedded::migrations::runner()
         .run_async(client)
         .await
         .unwrap();
 
-    #[derive(Debug, ToSql, FromSql)]
-    #[postgres(name = "user_role", rename_all = "lowercase")]
+    #[derive(Debug, Type)]
+    #[dojo(name = "user_role", rename_all = "lowercase")]
     enum UserRole {
         Admin,
         User,
@@ -74,20 +65,10 @@ async fn test_simple() {
         updated_at: chrono::Utc::now().naive_utc(),
     };
 
-    #[derive(Debug, ToSql, FromSql)]
-    struct UserUpdateInput {
-        name: Option<String>,
-        email: Option<String>,
-        profile: Option<Profile>,
-        role: Option<UserRole>,
-    }
-
     #[derive(UpdateModel)]
     struct UpdateUser {
         name: Option<String>,
     }
-
-    let db = Database::new(&pool);
 
     let user = db.insert(&input).await.unwrap();
     println!("user: {:?}", user);

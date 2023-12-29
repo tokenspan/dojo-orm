@@ -1,22 +1,22 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::ops::DerefMut;
-
-use bb8::Pool;
-use bb8_postgres::PostgresConnectionManager;
-use postgres_types::ToSql;
-use tokio_postgres::NoTls;
 
 use crate::cursor::order_by::CursorOrderByClause;
 use crate::model::Model;
 use crate::ops::{Op, OpValue};
 use crate::order_by::{Order, OrderByClause};
 use crate::pagination::Cursor;
+use crate::pool::*;
+use crate::types::ToSql;
 
-pub struct WhereSelectClause<'a, T> {
+pub struct WhereSelectClause<'a, T>
+where
+    T: Model,
+{
     pub(crate) pool: &'a Pool<PostgresConnectionManager<NoTls>>,
     pub(crate) params: Vec<&'a (dyn ToSql + Sync)>,
     pub(crate) ops: Vec<Op<'a>>,
+    pub(crate) is_delete: bool,
     pub(crate) _t: PhantomData<T>,
 }
 
@@ -26,6 +26,7 @@ where
 {
     pub fn order_by(&'a self, order: (&'a str, Order)) -> OrderByClause<'a, T> {
         OrderByClause {
+            pool: &self.pool,
             params: &self.params,
             ops: &self.ops,
             orders: HashMap::from([order]),
@@ -40,8 +41,8 @@ where
 
     pub fn cursor(
         &'a mut self,
-        before: Option<&'a Cursor>,
-        after: Option<&'a Cursor>,
+        before: &'a Option<Cursor>,
+        after: &'a Option<Cursor>,
     ) -> CursorOrderByClause<'a, T> {
         if let Some(value) = before {
             self.ops.push(Op::Value(OpValue {
@@ -60,9 +61,11 @@ where
         }
 
         CursorOrderByClause {
+            pool: &self.pool,
             params: &self.params,
             ops: &self.ops,
             orders: vec![],
+            before,
             after,
             _t: PhantomData,
         }
@@ -72,10 +75,16 @@ where
         let mut params_index = 1;
 
         let mut params = self.params.clone();
-        let mut query = "SELECT ".to_string();
-        query.push_str(&T::COLUMNS.join(", "));
-        query.push_str(" FROM ");
-        query.push_str(T::NAME);
+        let mut query = if self.is_delete {
+            format!("DELETE FROM {}", T::NAME)
+        } else {
+            let mut query = "SELECT ".to_string();
+            query.push_str(&T::COLUMNS.join(", "));
+            query.push_str(" FROM ");
+            query.push_str(T::NAME);
+
+            query
+        };
 
         let mut ands = vec![];
         for op in &self.ops {
@@ -89,20 +98,37 @@ where
             query.push_str(&and);
         }
 
+        if self.is_delete {
+            query.push_str(" RETURNING ");
+            query.push_str(&T::COLUMNS.join(", "));
+        }
+
         (query, params)
     }
 
-    pub async fn execute(&'a mut self) -> anyhow::Result<Option<T>> {
+    pub async fn first(&'a mut self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
         println!("query: {}", query);
         println!("params: {:?}", params);
-        let mut conn = self.pool.get().await?;
-        let client = conn.deref_mut();
+        let conn = self.pool.get().await?;
 
-        client
-            .query_opt(query.as_str(), &params)
+        conn.query_opt(query.as_str(), &params)
             .await?
             .map(T::from_row)
             .transpose()
+    }
+
+    pub async fn all(&'a mut self) -> anyhow::Result<Vec<T>> {
+        let (query, params) = self.build();
+        println!("query: {}", query);
+        println!("params: {:?}", params);
+        let conn = self.pool.get().await?;
+
+        let mut rows = vec![];
+        for row in conn.query(query.as_str(), &params).await? {
+            rows.push(T::from_row(row)?);
+        }
+
+        Ok(rows)
     }
 }

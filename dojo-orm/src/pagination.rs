@@ -1,7 +1,7 @@
-use std::borrow::Cow;
 use std::error::Error;
 use std::marker::PhantomData;
 
+use crate::types::{accepts, to_sql_checked, IsNull, ToSql, Type};
 use anyhow::Result;
 use async_graphql::connection::{Connection, CursorType, Edge};
 use async_graphql::{
@@ -10,7 +10,6 @@ use async_graphql::{
 use base64ct::{Base64, Encoding};
 use bytes::BytesMut;
 use chrono::NaiveDateTime;
-use postgres_types::{accepts, to_sql_checked, IsNull, ToSql, Type};
 use thiserror::Error;
 
 pub trait CursorExt<C: CursorType> {
@@ -18,12 +17,12 @@ pub trait CursorExt<C: CursorType> {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Cursor<'a> {
-    pub field: Cow<'a, str>,
+pub struct Cursor {
+    pub field: String,
     pub value: i64,
 }
 
-impl<'a> ToSql for Cursor<'a> {
+impl ToSql for Cursor {
     fn to_sql(
         &self,
         ty: &Type,
@@ -37,12 +36,9 @@ impl<'a> ToSql for Cursor<'a> {
     to_sql_checked!();
 }
 
-impl<'a> Cursor<'a> {
-    pub fn new(field: &'a str, value: i64) -> Self {
-        Self {
-            field: field.into(),
-            value,
-        }
+impl Cursor {
+    pub fn new(field: String, value: i64) -> Self {
+        Self { field, value }
     }
     pub fn encode(&self) -> String {
         Base64::encode_string(format!("{}:{}", self.field, self.value).as_bytes())
@@ -71,7 +67,7 @@ impl<'a> Cursor<'a> {
 }
 
 #[Scalar]
-impl<'a> ScalarType for Cursor<'a> {
+impl ScalarType for Cursor {
     fn parse(value: Value) -> InputValueResult<Self> {
         if let Value::String(value) = &value {
             let cursor =
@@ -88,7 +84,7 @@ impl<'a> ScalarType for Cursor<'a> {
     }
 }
 
-impl<'a> CursorType for Cursor<'a> {
+impl CursorType for Cursor {
     type Error = OffsetEncodedError;
 
     fn decode_cursor(s: &str) -> std::result::Result<Self, Self::Error> {
@@ -118,28 +114,28 @@ pub enum OffsetEncodedError {
 }
 
 #[derive(Debug)]
-pub struct Pagination<'a, C, T>
+pub struct Pagination<C, T>
 where
     T: CursorExt<C>,
     C: CursorType + Send + Sync,
 {
     pub items: Vec<T>,
-    pub before: Option<Cursor<'a>>,
-    pub after: Option<Cursor<'a>>,
+    pub before: Option<Cursor>,
+    pub after: Option<Cursor>,
     pub limit: i64,
     pub total_nodes: i64,
     _phantom: PhantomData<C>,
 }
 
-impl<'a, C, T> Pagination<'a, C, T>
+impl<C, T> Pagination<C, T>
 where
     T: CursorExt<C>,
     C: CursorType + Send + Sync,
 {
     pub fn new(
         items: Vec<T>,
-        before: Option<Cursor<'a>>,
-        after: Option<Cursor<'a>>,
+        before: Option<Cursor>,
+        after: Option<Cursor>,
         limit: i64,
         total_nodes: i64,
     ) -> Self {
@@ -191,7 +187,7 @@ where
     }
 }
 
-impl<'a, C, N> From<Pagination<'a, C, N>> for Connection<C, N, AdditionalFields>
+impl<C, N> From<Pagination<C, N>> for Connection<C, N, AdditionalFields>
 where
     C: CursorType + Send + Sync,
     N: OutputType + CursorExt<C>,

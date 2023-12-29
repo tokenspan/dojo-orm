@@ -1,10 +1,8 @@
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 
-use bb8::Pool;
-use bb8_postgres::PostgresConnectionManager;
-use postgres_types::ToSql;
-use tokio_postgres::NoTls;
+use crate::pool::*;
+use crate::types::ToSql;
 
 use crate::limit::LimitClause;
 use crate::model::{Model, UpdateModel};
@@ -75,7 +73,7 @@ where
         (query, params)
     }
 
-    pub async fn execute(&'a self) -> anyhow::Result<Option<T>> {
+    pub async fn first(&'a self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
         let mut conn = self.pool.get().await?;
         let client = conn.deref_mut();
