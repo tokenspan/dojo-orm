@@ -42,6 +42,40 @@ pub fn expand_update_model_derive(
         _ => panic!("Table can only be derived for structs"),
     };
 
+    // Get the field idents
+    let field_idents = fields
+        .clone()
+        .into_iter()
+        .filter_map(|f| f.ident)
+        .collect::<Vec<_>>();
+
+    let field_idents_str = field_idents
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>();
+
+    let columns = derive_get_fields_with_tys(fields.clone())
+        .into_iter()
+        .map(|(ident, outer_ty, _inner_ty)| {
+            let nullable = field_attrs
+                .get(&ident.to_string())
+                .map(|attrs| attrs.nullable)
+                .unwrap_or(false);
+
+            if outer_ty == "Option" && !nullable {
+                quote::quote! {
+                    if let Some(value) = &self.#ident {
+                        columns.push(stringify!(#ident));
+                    }
+                }
+            } else {
+                quote::quote! {
+                    columns.push(stringify!(#ident));
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
     let params = derive_get_fields_with_tys(fields)
         .into_iter()
         .map(|(ident, outer_ty, _inner_ty)| {
@@ -66,7 +100,15 @@ pub fn expand_update_model_derive(
 
     let expanded = quote::quote! {
         impl #impl_generics dojo_orm::UpdateModel for #ident #ty_generics #where_clause {
-            const COLUMNS: &'static [&'static str] = &["name"];
+            const COLUMNS: &'static [&'static str] = &[#(#field_idents_str),*];
+
+            fn columns(&self) -> Vec<&'static str> {
+                let mut columns: Vec<&'static str> = Vec::new();
+
+                #(#columns)*
+
+                columns
+            }
 
             fn params(&self) -> Vec<&(dyn dojo_orm::types::ToSql + Sync)> {
                 let mut params: Vec<&(dyn dojo_orm::types::ToSql + Sync)> = Vec::new();

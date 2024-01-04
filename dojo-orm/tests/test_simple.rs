@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use dojo_macros::{EmbeddedModel, Model, Type, UpdateModel};
+use dojo_orm::ops::{and, eq};
 use dojo_orm::{Database, Model, UpdateModel};
 
 mod embedded {
@@ -70,20 +71,20 @@ async fn test_simple() {
         name: Option<String>,
     }
 
-    let user = db.insert(&input).await.unwrap();
-    println!("user: {:?}", user);
+    // let user = db.insert(&input).await.unwrap();
+    // println!("user: {:?}", user);
 
-    // let input = UpdateUser {
-    //     name: Some("John1".to_string()),
-    // };
-    // let id = Uuid::parse_str("ae686215-9676-4657-b239-339699049f28").unwrap();
-    // let row = db
-    //     .update::<User, _>(&input)
-    //     .where_by(and(vec![eq("id", &id)]))
-    //     .execute()
-    //     .await
-    //     .unwrap();
-    // println!("row: {:?}", row);
+    let input = UpdateUser {
+        name: Some("John1".to_string()),
+    };
+    let id = Uuid::parse_str("ae686215-9676-4657-b239-339699049f28").unwrap();
+    let row = db
+        .update::<User, _>(&input)
+        .where_by(and(&[eq("id", &id)]))
+        .first()
+        .await
+        .unwrap();
+    println!("row: {:?}", row);
 
     // let id = Uuid::parse_str("c4cf875a-7861-4ae8-a9ff-21d040ed0d7b").unwrap();
     // let cursor = Cursor::new("created_at", 1);

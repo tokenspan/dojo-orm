@@ -95,7 +95,7 @@ where
             ands.push(q);
             params.extend_from_slice(&p);
         }
-        if !query.is_empty() {
+        if !ands.is_empty() {
             let and = ands.join(" AND ");
             query.push_str(" WHERE ");
             query.push_str(&and);
@@ -111,6 +111,7 @@ where
 
     pub async fn first(&'a mut self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
+        let query = format!("{} LIMIT 1", query);
         debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 

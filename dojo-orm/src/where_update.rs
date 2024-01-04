@@ -16,6 +16,7 @@ where
 {
     pub(crate) pool: &'a Pool<PostgresConnectionManager<NoTls>>,
     pub(crate) params: Vec<&'a (dyn ToSql + Sync)>,
+    pub(crate) columns: Vec<&'a str>,
     pub(crate) ops: Vec<Op<'a>>,
     pub(crate) _t: PhantomData<T>,
     pub(crate) _u: PhantomData<U>,
@@ -50,7 +51,7 @@ where
         query.push_str(" SET ");
 
         let mut sets = vec![];
-        for column in U::COLUMNS {
+        for column in &self.columns {
             sets.push(format!("{} = ${}", column, params_index));
             params_index += 1;
         }
