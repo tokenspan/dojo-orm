@@ -11,5 +11,6 @@ pub trait Model {
 
 pub trait UpdateModel {
     const COLUMNS: &'static [&'static str];
+    fn columns(&self) -> Vec<&'static str>;
     fn params(&self) -> Vec<&(dyn ToSql + Sync)>;
 }
