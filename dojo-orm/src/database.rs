@@ -68,8 +68,10 @@ impl Database {
         data: &'a U,
     ) -> WhereUpdateClause<'a, T, U> {
         let params = data.params();
+        let columns = data.columns();
         WhereUpdateClause {
             pool: &self.pool,
+            columns: columns.clone(),
             params: params.clone(),
             ops: vec![],
             _t: PhantomData,
