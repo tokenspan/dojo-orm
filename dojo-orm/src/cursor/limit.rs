@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use async_graphql::futures_util::TryFutureExt;
+use tracing::debug;
 
 use crate::model::Model;
 use crate::ops::Op;
@@ -51,8 +52,6 @@ where
         let limit = self.limit + if self.after.is_some() { 2 } else { 1 };
         query.push_str(format!(" LIMIT {}", limit).as_str());
 
-        println!("query: {}", query);
-        println!("params: {:?}", params);
         (query, params)
     }
 
@@ -70,8 +69,7 @@ where
         T1: CursorExt<Cursor> + Model + Sync + Send,
     {
         let (query, params) = self.build();
-        println!("query: {}", query);
-        println!("params: {:?}", params);
+        debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 
         let query_fut = conn

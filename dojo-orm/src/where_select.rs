@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use tracing::{debug, info};
 
 use crate::cursor::order_by::CursorOrderByClause;
 use crate::model::Model;
-use crate::ops::{Op, OpValue};
+use crate::ops::{Op, OpValue, OpValueType};
 use crate::order_by::{Order, OrderByClause};
 use crate::pagination::Cursor;
 use crate::pool::*;
@@ -46,6 +47,7 @@ where
     ) -> CursorOrderByClause<'a, T> {
         if let Some(value) = before {
             self.ops.push(Op::Value(OpValue {
+                ty: OpValueType::Value,
                 column: value.field.clone().into(),
                 op: "<=",
                 value,
@@ -54,6 +56,7 @@ where
 
         if let Some(value) = after {
             self.ops.push(Op::Value(OpValue {
+                ty: OpValueType::Value,
                 column: value.field.clone().into(),
                 op: ">=",
                 value,
@@ -108,8 +111,7 @@ where
 
     pub async fn first(&'a mut self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
-        println!("query: {}", query);
-        println!("params: {:?}", params);
+        debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 
         conn.query_opt(query.as_str(), &params)
@@ -120,8 +122,7 @@ where
 
     pub async fn all(&'a mut self) -> anyhow::Result<Vec<T>> {
         let (query, params) = self.build();
-        println!("query: {}", query);
-        println!("params: {:?}", params);
+        debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 
         let mut rows = vec![];

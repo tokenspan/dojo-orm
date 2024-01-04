@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use tracing::debug;
 
 use crate::model::{Model, UpdateModel};
 use crate::pagination::{Cursor, CursorExt};
@@ -56,6 +57,7 @@ impl Database {
         query.push_str(T::COLUMNS.join(", ").as_str());
 
         let conn = self.pool.get().await?;
+        debug!("query: {}, params: {:?}", query, params);
         let row = conn.query_one(query.as_str(), &params).await?;
 
         Ok(T::from_row(row)?)

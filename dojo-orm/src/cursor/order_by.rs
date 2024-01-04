@@ -59,8 +59,6 @@ where
             query.push_str(&and);
         }
 
-        println!("query: {}", query);
-        println!("params: {:?}", params);
         (query, params)
     }
 }

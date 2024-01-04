@@ -4,7 +4,14 @@ use crate::order_by::Order;
 use crate::types::ToSql;
 
 #[derive(Debug)]
+pub enum OpValueType {
+    Value,
+    Array,
+}
+
+#[derive(Debug)]
 pub struct OpValue<'a> {
+    pub ty: OpValueType,
     pub column: Cow<'a, str>,
     pub op: &'a str,
     pub value: &'a (dyn ToSql + Sync),
@@ -13,15 +20,22 @@ pub struct OpValue<'a> {
 #[derive(Debug)]
 pub enum Op<'a> {
     Value(OpValue<'a>),
-    And(Vec<Op<'a>>),
-    Or(Vec<Op<'a>>),
+    And(&'a [Op<'a>]),
+    Or(&'a [Op<'a>]),
 }
 
 impl<'a> Op<'a> {
     pub fn sql(&self, params_index: &mut usize) -> (String, Vec<&'a (dyn ToSql + Sync)>) {
         match self {
             Op::Value(op_value) => {
-                let query = format!("{} {} ${}", op_value.column, op_value.op, params_index);
+                let query = match op_value.ty {
+                    OpValueType::Value => {
+                        format!("{} {} ${}", op_value.column, op_value.op, params_index)
+                    }
+                    OpValueType::Array => {
+                        format!("{} {} ANY(${})", op_value.column, op_value.op, params_index)
+                    }
+                };
                 let params = vec![op_value.value];
                 *params_index += 1;
                 (query, params)
@@ -29,7 +43,7 @@ impl<'a> Op<'a> {
             Op::And(ops) => {
                 let mut ands = vec![];
                 let mut params = vec![];
-                for op in ops {
+                for op in *ops {
                     let (q, p) = op.sql(params_index);
                     ands.push(q);
                     params.extend_from_slice(&p);
@@ -41,7 +55,7 @@ impl<'a> Op<'a> {
             Op::Or(ops) => {
                 let mut ors = vec![];
                 let mut params = vec![];
-                for op in ops {
+                for op in *ops {
                     let (q, p) = op.sql(params_index);
                     ors.push(q);
                     params.extend_from_slice(&p);
@@ -54,26 +68,28 @@ impl<'a> Op<'a> {
     }
 }
 
-pub fn and(ops: Vec<Op>) -> Op {
+pub fn and<'a>(ops: &'a [Op<'a>]) -> Op<'a> {
     Op::And(ops)
 }
 
-pub fn or(ops: Vec<Op>) -> Op {
+pub fn or<'a>(ops: &'a [Op<'a>]) -> Op<'a> {
     Op::Or(ops)
 }
 
 pub fn eq<'a, T: ToSql + Sync>(column: &'a str, value: &'a T) -> Op<'a> {
     Op::Value(OpValue {
+        ty: OpValueType::Value,
         column: column.into(),
         op: "=",
         value,
     })
 }
 
-pub fn in_list<'a, T: ToSql + Sync>(column: &'a str, values: &'a Vec<T>) -> Op<'a> {
+pub fn in_list<'a, T: ToSql + Sync>(column: &'a str, values: &'a T) -> Op<'a> {
     Op::Value(OpValue {
+        ty: OpValueType::Array,
         column: column.into(),
-        op: "IN",
+        op: "=",
         value: values,
     })
 }
@@ -84,4 +100,64 @@ pub fn asc(column: &str) -> (&str, Order) {
 
 pub fn desc(column: &str) -> (&str, Order) {
     (column, Order::Desc)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_and() {
+        use super::{and, eq, in_list, Op};
+        use crate::types::ToSql;
+
+        let op = and(&[eq("foo", &1), eq("bar", &2), in_list("baz", &vec![3, 4, 5])]);
+
+        match op {
+            Op::And(ops) => {
+                assert_eq!(ops.len(), 3);
+                match &ops[0] {
+                    Op::Value(op_value) => {
+                        assert_eq!(op_value.column, "foo");
+                        assert_eq!(op_value.op, "=");
+                        assert_eq!(
+                            op_value
+                                .value
+                                .to_sql(&crate::types::Type::INT4, &mut vec![])
+                                .unwrap(),
+                            1
+                        );
+                    }
+                    _ => panic!("Expected Op::Value"),
+                }
+                match &ops[1] {
+                    Op::Value(op_value) => {
+                        assert_eq!(op_value.column, "bar");
+                        assert_eq!(op_value.op, "=");
+                        assert_eq!(
+                            op_value
+                                .value
+                                .to_sql(&crate::types::Type::INT4, &mut vec![])
+                                .unwrap(),
+                            2
+                        );
+                    }
+                    _ => panic!("Expected Op::Value"),
+                }
+                match &ops[2] {
+                    Op::Value(op_value) => {
+                        assert_eq!(op_value.column, "baz");
+                        assert_eq!(op_value.op, "IN");
+                        assert_eq!(
+                            op_value
+                                .value
+                                .to_sql(&crate::types::Type::INT4, &mut vec![])
+                                .unwrap(),
+                            vec![3, 4, 5]
+                        );
+                    }
+                    _ => panic!("Expected Op::Value"),
+                }
+            }
+            _ => panic!("Expected Op::And"),
+        }
+    }
 }

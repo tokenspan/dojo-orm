@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 use std::ops::DerefMut;
+use tracing::debug;
 
 use crate::pool::*;
 use crate::types::ToSql;
@@ -75,6 +76,7 @@ where
 
     pub async fn first(&'a self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
+        debug!("query: {}, params: {:?}", query, params);
         let mut conn = self.pool.get().await?;
         let client = conn.deref_mut();
 

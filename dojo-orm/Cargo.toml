@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-graphql = { git = "https://github.com/linrium/async-graphql", branch = "support-axum-0.7-custom", features = ["tokio", "chrono", "dataloader", "tracing", "uuid"] }
+async-graphql = { git = "https://github.com/async-graphql/async-graphql", features = ["tokio", "chrono", "dataloader", "tracing", "uuid"] }
 base64ct = { version = "1.6.0", features = ["alloc"] }
 postgres-types = { version = "0.2.6", features = ["derive", "with-serde_json-1"] }
 postgres-openssl = "0.5.0"
 tokio = { version = "1.35.1", features = ["full"] }
-serde = { version = "1.0.193", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.108"
 bb8 = "0.8.1"
 bb8-postgres = "0.8.1"
@@ -21,6 +21,8 @@ chrono = { version = "0.4.19", features = ["serde"] }
 bytes = "1.5.0"
 async-trait = "0.1.75"
 dojo-macros = { path = "../dojo-macros" }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [dependencies.tokio-postgres]
 version = "0.7.2"
