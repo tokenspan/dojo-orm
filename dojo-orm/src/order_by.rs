@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::marker::PhantomData;
+use tracing::debug;
 
 use crate::limit::LimitClause;
 use crate::model::Model;
@@ -86,8 +87,7 @@ where
 
     pub async fn first(&'a mut self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
-        println!("query: {}", query);
-        println!("params: {:?}", params);
+        debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 
         conn.query_opt(query.as_str(), &params)
