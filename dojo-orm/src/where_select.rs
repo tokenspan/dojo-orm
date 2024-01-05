@@ -112,7 +112,11 @@ where
 
     pub async fn first(&'a mut self) -> anyhow::Result<Option<T>> {
         let (query, params) = self.build();
-        let query = format!("{} LIMIT 1", query);
+        let query = if self.is_delete {
+            query
+        } else {
+            format!("{} LIMIT 1", query)
+        };
         debug!("query: {}, params: {:?}", query, params);
         let conn = self.pool.get().await?;
 

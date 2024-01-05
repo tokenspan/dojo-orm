@@ -63,6 +63,49 @@ impl Database {
         Ok(T::from_row(row)?)
     }
 
+    pub async fn insert_many<T: Model>(&self, data: &[T]) -> anyhow::Result<Vec<T>> {
+        if data.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut query = "INSERT INTO ".to_string();
+        query.push_str(T::NAME);
+        query.push_str(" (");
+        query.push_str(T::COLUMNS.join(", ").as_str());
+        query.push_str(") VALUES ");
+
+        let mut params_index = 1;
+        let mut params = vec![];
+        let mut list_values = vec![];
+        for item in data {
+            let mut values = vec![];
+            let mut query = "(".to_string();
+            for param in item.params() {
+                values.push(format!("${}", params_index));
+                params.push(param);
+                params_index += 1;
+            }
+            query.push_str(values.join(", ").as_str());
+            query.push_str(")");
+
+            list_values.push(query);
+        }
+        query.push_str(list_values.join(", ").as_str());
+        query.push_str(" RETURNING ");
+        query.push_str(T::COLUMNS.join(", ").as_str());
+
+        let conn = self.pool.get().await?;
+        debug!("query: {}, params: {:?}", query, params);
+        let row = conn.query(query.as_str(), &params).await?;
+
+        let mut rows = vec![];
+        for row in row {
+            rows.push(T::from_row(row)?);
+        }
+
+        Ok(rows)
+    }
+
     pub fn update<'a, T: Model, U: UpdateModel>(
         &'a self,
         data: &'a U,
