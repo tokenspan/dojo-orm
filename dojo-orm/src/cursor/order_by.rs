@@ -25,6 +25,11 @@ impl<'a, T> CursorOrderByClause<'a, T>
 where
     T: Model,
 {
+    pub fn order_by(&'a mut self, order: (&'a str, Order)) -> &'a mut Self {
+        self.orders.push(order);
+        self
+    }
+
     pub fn limit(&'a mut self, limit: i64) -> CursorLimitClause<'a, T> {
         CursorLimitClause {
             pool: &self.pool,
@@ -53,10 +58,18 @@ where
             ands.push(q);
             params.extend_from_slice(&p);
         }
+
         if !query.is_empty() {
             let and = ands.join(" AND ");
             query.push_str(" WHERE ");
             query.push_str(&and);
+        }
+
+        query.push_str(" ORDER BY ");
+        if self.before.is_some() {
+            query.push_str("created_at ASC");
+        } else {
+            query.push_str("created_at DESC");
         }
 
         (query, params)

@@ -50,7 +50,7 @@ where
             self.ops.push(Op::Value(OpValue {
                 ty: OpValueType::Value,
                 column: value.field.clone().into(),
-                op: "<=",
+                op: ">=",
                 value,
             }));
         }
@@ -59,7 +59,7 @@ where
             self.ops.push(Op::Value(OpValue {
                 ty: OpValueType::Value,
                 column: value.field.clone().into(),
-                op: ">=",
+                op: "<=",
                 value,
             }));
         }
