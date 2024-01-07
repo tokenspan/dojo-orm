@@ -49,6 +49,13 @@ where
             query.push_str(&and);
         }
 
+        query.push_str(" ORDER BY ");
+        if self.before.is_some() {
+            query.push_str("created_at ASC");
+        } else {
+            query.push_str("created_at DESC");
+        }
+
         let limit = self.limit + if self.after.is_some() { 2 } else { 1 };
         query.push_str(format!(" LIMIT {}", limit).as_str());
 

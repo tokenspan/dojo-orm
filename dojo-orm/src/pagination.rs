@@ -212,13 +212,7 @@ where
                     // if size is less than or equal to take and before is present, then we need to skip the last item
                     // before: (check previous)[A] <- (B) <- (cursor)[C]
                     size if size - 1 <= value.limit as usize => {
-                        let matcher = if value.after.is_some() {
-                            0
-                        } else {
-                            item_size - 1
-                        };
-
-                        if index == matcher {
+                        if index == 0 {
                             continue;
                         }
                     }
@@ -253,6 +247,10 @@ where
 
             let cursor = item.cursor();
             edges.push(Edge::new(cursor, item));
+        }
+
+        if value.before.is_some() {
+            edges.reverse();
         }
 
         connection.edges.extend(edges);
