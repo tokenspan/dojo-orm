@@ -43,32 +43,18 @@ where
 
     pub fn cursor(
         &'a mut self,
+        first: Option<i64>,
+        last: Option<i64>,
         before: &'a Option<Cursor>,
         after: &'a Option<Cursor>,
     ) -> CursorOrderByClause<'a, T> {
-        if let Some(value) = before {
-            self.ops.push(Op::Value(OpValue {
-                ty: OpValueType::Value,
-                column: value.field.clone().into(),
-                op: ">=",
-                value,
-            }));
-        }
-
-        if let Some(value) = after {
-            self.ops.push(Op::Value(OpValue {
-                ty: OpValueType::Value,
-                column: value.field.clone().into(),
-                op: "<=",
-                value,
-            }));
-        }
-
         CursorOrderByClause {
             pool: &self.pool,
             params: &self.params,
             ops: &self.ops,
             orders: vec![],
+            first,
+            last,
             before,
             after,
             _t: PhantomData,
@@ -93,8 +79,10 @@ where
         let mut ands = vec![];
         for op in &self.ops {
             let (q, p) = op.sql(&mut params_index);
-            ands.push(q);
-            params.extend_from_slice(&p);
+            if let Some(q) = q {
+                ands.push(q);
+                params.extend_from_slice(&p);
+            }
         }
         if !ands.is_empty() {
             let and = ands.join(" AND ");

@@ -23,5 +23,6 @@ pub mod bytes {
     pub use bytes::*;
 }
 
+pub use crate::order_by::Order;
 pub use database::*;
 pub use model::*;

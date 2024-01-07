@@ -1,3 +1,4 @@
+use async_graphql::Enum;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::marker::PhantomData;
@@ -9,9 +10,11 @@ use crate::ops::Op;
 use crate::pool::*;
 use crate::types::ToSql;
 
-#[derive(Debug)]
+#[derive(Enum, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Order {
+    #[graphql(name = "asc")]
     Asc,
+    #[graphql(name = "desc")]
     Desc,
 }
 
@@ -61,8 +64,10 @@ where
         let mut ands = vec![];
         for op in self.ops {
             let (q, p) = op.sql(&mut params_index);
-            ands.push(q);
-            params.extend_from_slice(&p);
+            if let Some(q) = q {
+                ands.push(q);
+                params.extend_from_slice(&p);
+            }
         }
         if !query.is_empty() {
             let and = ands.join(" AND ");

@@ -173,7 +173,7 @@ where
                 // (check previous)[A] <- (B) <- (C) <- (D) <- (cursor)[E]
                 size if size > 2 => (true, true),
                 // otherwise, it means we have a next page but no previous page
-                _ => (false, true),
+                _ => (true, false),
             }
         } else {
             match item_size {

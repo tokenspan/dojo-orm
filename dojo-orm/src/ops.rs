@@ -3,13 +3,13 @@ use std::borrow::Cow;
 use crate::order_by::Order;
 use crate::types::ToSql;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum OpValueType {
     Value,
     Array,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OpValue<'a> {
     pub ty: OpValueType,
     pub column: Cow<'a, str>,
@@ -17,7 +17,7 @@ pub struct OpValue<'a> {
     pub value: &'a (dyn ToSql + Sync),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Op<'a> {
     Value(OpValue<'a>),
     And(&'a [Op<'a>]),
@@ -25,7 +25,7 @@ pub enum Op<'a> {
 }
 
 impl<'a> Op<'a> {
-    pub fn sql(&self, params_index: &mut usize) -> (String, Vec<&'a (dyn ToSql + Sync)>) {
+    pub fn sql(&self, params_index: &mut usize) -> (Option<String>, Vec<&'a (dyn ToSql + Sync)>) {
         match self {
             Op::Value(op_value) => {
                 let query = match op_value.ty {
@@ -38,31 +38,43 @@ impl<'a> Op<'a> {
                 };
                 let params = vec![op_value.value];
                 *params_index += 1;
-                (query, params)
+                (Some(query), params)
             }
             Op::And(ops) => {
+                if ops.is_empty() {
+                    return (None, vec![]);
+                }
+
                 let mut ands = vec![];
                 let mut params = vec![];
                 for op in *ops {
                     let (q, p) = op.sql(params_index);
-                    ands.push(q);
-                    params.extend_from_slice(&p);
+                    if let Some(q) = q {
+                        ands.push(q);
+                        params.extend_from_slice(&p);
+                    }
                 }
 
                 let query = format!("({})", ands.join(" AND "));
-                (query, params)
+                (Some(query), params)
             }
             Op::Or(ops) => {
+                if ops.is_empty() {
+                    return (None, vec![]);
+                }
+
                 let mut ors = vec![];
                 let mut params = vec![];
                 for op in *ops {
                     let (q, p) = op.sql(params_index);
-                    ors.push(q);
-                    params.extend_from_slice(&p);
+                    if let Some(q) = q {
+                        ors.push(q);
+                        params.extend_from_slice(&p);
+                    }
                 }
 
                 let query = format!("({})", ors.join(" OR "));
-                (query, params)
+                (Some(query), params)
             }
         }
     }

@@ -60,8 +60,10 @@ where
         let mut ands = vec![];
         for op in &self.ops {
             let (q, p) = op.sql(&mut params_index);
-            ands.push(q);
-            params.extend_from_slice(&p);
+            if let Some(q) = q {
+                ands.push(q);
+                params.extend_from_slice(&p);
+            }
         }
         if !query.is_empty() {
             let and = ands.join(" AND ");
