@@ -8,17 +8,16 @@ use crate::pool::*;
 use crate::types::ToSql;
 
 use crate::model::{Model, UpdateModel};
-use crate::predicates::Predicate;
+use crate::predicates::{eq, Predicate};
 use crate::query_builder::{QueryBuilder, QueryType};
 
-pub struct WhereUpdate<'a, T> {
+pub struct WhereDelete<'a, T> {
     pub(crate) pool: &'a Pool<PostgresConnectionManager<NoTls>>,
-    pub(crate) params: Vec<&'a (dyn ToSql + Sync)>,
     pub(crate) predicates: Vec<Predicate<'a>>,
     pub(crate) _t: PhantomData<T>,
 }
 
-impl<'a, T> WhereUpdate<'a, T>
+impl<'a, T> WhereDelete<'a, T>
 where
     T: Model + Debug,
 {
@@ -31,9 +30,8 @@ where
         let qb = QueryBuilder::builder()
             .table_name(T::NAME)
             .columns(T::COLUMNS)
-            .params(&self.params.as_slice())
             .predicates(&self.predicates.as_slice())
-            .ty(QueryType::Update)
+            .ty(QueryType::Delete)
             .is_returning(true)
             .build();
 

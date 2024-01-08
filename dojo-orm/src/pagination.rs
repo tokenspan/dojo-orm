@@ -1,7 +1,9 @@
 use std::error::Error;
+use std::fmt::Display;
 use std::marker::PhantomData;
 
 use crate::types::{accepts, to_sql_checked, IsNull, ToSql, Type};
+use crate::{Direction, Model, OrderValue};
 use anyhow::Result;
 use async_graphql::connection::{Connection, CursorType, Edge};
 use async_graphql::{
@@ -10,59 +12,123 @@ use async_graphql::{
 use base64ct::{Base64, Encoding};
 use bytes::BytesMut;
 use chrono::NaiveDateTime;
-use thiserror::Error;
+use serde::{Deserialize, Serialize};
+use tracing::debug;
 
-pub trait CursorExt<C: CursorType> {
-    fn cursor(&self) -> C;
-}
+pub trait DefaultSortKeys {
+    fn keys() -> Vec<String>;
 
-#[derive(Debug, Clone, Default)]
-pub struct Cursor {
-    pub field: String,
-    pub value: i64,
-}
+    fn order_by_stmt(direction: Direction) -> String {
+        let mut stmt = "".to_string();
+        for (i, order) in Self::keys().iter().enumerate() {
+            if i > 0 {
+                stmt.push_str(", ");
+            }
+            stmt.push_str(&order);
+            if i == 0 {
+                if direction == Direction::Asc {
+                    stmt.push_str(" ASC");
+                } else {
+                    stmt.push_str(" DESC");
+                }
+            } else {
+                stmt.push_str(" ASC");
+            }
+        }
 
-impl ToSql for Cursor {
-    fn to_sql(
-        &self,
-        ty: &Type,
-        w: &mut BytesMut,
-    ) -> std::result::Result<IsNull, Box<dyn Error + Sync + Send>> {
-        let t = NaiveDateTime::from_timestamp_micros(self.value).unwrap();
-        t.to_sql(ty, w)
+        stmt
     }
+}
 
-    accepts!(TIMESTAMP);
-    to_sql_checked!();
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CursorValue {
+    pub column: String,
+    pub value: crate::model::Value,
+}
+
+impl CursorValue {
+    pub fn new(column: String, value: crate::model::Value) -> Self {
+        Self { column, value }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Cursor {
+    pub values: Vec<CursorValue>,
 }
 
 impl Cursor {
-    pub fn new(field: String, value: i64) -> Self {
-        Self { field, value }
+    pub fn to_where_stmt(&self, direction: Direction) -> (String, Vec<&(dyn ToSql + Sync)>) {
+        let mut columns = vec![];
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for value in &self.values {
+            columns.push(value.column.clone());
+            params.push(&value.value);
+        }
+        let mut stmt = "(".to_string();
+        stmt.push_str(&columns.join(", "));
+        stmt.push_str(") ");
+
+        if direction == Direction::Asc {
+            stmt.push_str(">");
+        } else {
+            stmt.push_str("<");
+        }
+        stmt.push_str(" (");
+        stmt.push_str(
+            &params
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("${}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        stmt.push_str(")");
+
+        (stmt, params)
     }
+
+    pub fn to_order_by_stmt(&self, direction: Direction) -> String {
+        let keys = self.values.iter().map(|v| v.column.clone()).collect();
+        Self::order_by_stmt_by_keys(&keys, direction)
+    }
+
+    pub fn order_by_stmt_by_keys(keys: &Vec<String>, direction: Direction) -> String {
+        let mut stmt = "".to_string();
+        if let Some(value) = keys.first() {
+            stmt.push_str(value);
+            if direction == Direction::Asc {
+                stmt.push_str(" ASC");
+            } else {
+                stmt.push_str(" DESC");
+            }
+        }
+
+        for value in keys.iter().skip(1) {
+            stmt.push_str(", ");
+            stmt.push_str(value);
+            stmt.push_str(" ASC");
+        }
+
+        stmt
+    }
+}
+
+impl Cursor {
+    pub fn new(values: Vec<CursorValue>) -> Self {
+        Self { values }
+    }
+
     pub fn encode(&self) -> String {
-        Base64::encode_string(format!("{}:{}", self.field, self.value).as_bytes())
+        // it's safe, trust me bro.
+        let buf = bincode::serialize(&self.values).unwrap();
+        Base64::encode_string(buf.as_slice())
     }
 
-    pub fn decode(encoded: &str) -> Result<Self, OffsetEncodedError> {
-        let decoded = Base64::decode_vec(encoded).map_err(|_| OffsetEncodedError::InvalidBase64)?;
-        let raw = String::from_utf8(decoded).map_err(OffsetEncodedError::Utf8Error)?;
-        let parts = raw
-            .as_str()
-            .split(':')
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
-
-        let field = parts[0].clone();
-        let value = parts[1]
-            .clone()
-            .parse::<i64>()
-            .map_err(|_| OffsetEncodedError::InvalidCursor)?;
-
-        Ok(Self {
-            field: field.into(),
-            value,
-        })
+    pub fn decode(encoded: &str) -> Result<Self> {
+        let decoded = Base64::decode_vec(encoded).unwrap();
+        let values: Vec<CursorValue> = bincode::deserialize(&decoded[..])?;
+        Ok(Self { values })
     }
 }
 
@@ -85,7 +151,7 @@ impl ScalarType for Cursor {
 }
 
 impl CursorType for Cursor {
-    type Error = OffsetEncodedError;
+    type Error = anyhow::Error;
 
     fn decode_cursor(s: &str) -> std::result::Result<Self, Self::Error> {
         Self::decode(s)
@@ -101,37 +167,16 @@ pub struct AdditionalFields {
     pub total_nodes: i64,
 }
 
-#[derive(Debug, Error)]
-pub enum OffsetEncodedError {
-    #[error("invalid base64")]
-    InvalidBase64,
-
-    #[error("invalid utf8: {0}")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
-
-    #[error("invalid cursor")]
-    InvalidCursor,
-}
-
 #[derive(Debug)]
-pub struct Pagination<C, T>
-where
-    T: CursorExt<C>,
-    C: CursorType + Send + Sync,
-{
+pub struct Pagination<T> {
     pub items: Vec<T>,
     pub before: Option<Cursor>,
     pub after: Option<Cursor>,
     pub limit: i64,
     pub total_nodes: i64,
-    _phantom: PhantomData<C>,
 }
 
-impl<C, T> Pagination<C, T>
-where
-    T: CursorExt<C>,
-    C: CursorType + Send + Sync,
-{
+impl<T> Pagination<T> {
     pub fn new(
         items: Vec<T>,
         before: Option<Cursor>,
@@ -145,56 +190,17 @@ where
             after,
             limit,
             total_nodes,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Returns a tuple of (has_previous, has_next)
-    fn has_page(&self) -> (bool, bool) {
-        let item_size = self.items.len();
-        if self.after.is_some() {
-            match item_size {
-                0 => (false, false),
-                size if size - 1 <= self.limit as usize => (true, false),
-                // if size is greater than 2, it means we have a next page and previous page
-                // [A](cursor) -> (B) -> (C) -> (D) -> [E](check next)
-                size if size > 2 => (true, true),
-                // if size is less than 2, it means we have a previous page but no no page
-                // [A](cursor) -> (C)
-                _ => (true, false),
-            }
-        } else if self.before.is_some() {
-            match item_size {
-                0 => (false, false),
-                // if size - 1 is less than or equal to take, it means we have a previous page but no next page
-                // (check previous)[A] <- (B) <- (cursor)[C]
-                size if size - 1 <= self.limit as usize => (false, true),
-                // if size is greater than 2, it means we have a next page and previous page
-                // (check previous)[A] <- (B) <- (C) <- (D) <- (cursor)[E]
-                size if size > 2 => (true, true),
-                // otherwise, it means we have a next page but no previous page
-                _ => (true, false),
-            }
-        } else {
-            match item_size {
-                0 => (false, false),
-                // if size - 1 is greater than 2, it means we have a next page and no previous page
-                size if size > self.limit as usize => (false, true),
-                // otherwise, it means we have no next page and no previous page
-                _ => (false, false),
-            }
         }
     }
 }
 
-impl<C, N> From<Pagination<C, N>> for Connection<C, N, AdditionalFields>
+impl<T> From<Pagination<T>> for Connection<Cursor, T, AdditionalFields>
 where
-    C: CursorType + Send + Sync,
-    N: OutputType + CursorExt<C>,
+    T: OutputType + Model,
 {
-    fn from(value: Pagination<C, N>) -> Self {
-        let item_size = value.items.len();
-        let (has_previous, has_next) = value.has_page();
+    fn from(value: Pagination<T>) -> Self {
+        let has_previous = false;
+        let has_next = false;
         let mut connection = Connection::with_additional_fields(
             has_previous,
             has_next,
@@ -203,58 +209,80 @@ where
             },
         );
 
-        let mut edges = vec![];
-        for (index, item) in value.items.into_iter().enumerate() {
-            if value.after.is_some() || value.before.is_some() {
-                match item_size {
-                    // if size is less than or equal to take and after is present, then we need to skip the first item
-                    // after: [A](cursor) -> (B) -> [C](check next)
-                    // if size is less than or equal to take and before is present, then we need to skip the last item
-                    // before: (check previous)[A] <- (B) <- (cursor)[C]
-                    size if size - 1 <= value.limit as usize => {
-                        if index == 0 {
-                            continue;
-                        }
-                    }
-                    // if size is greater than 2, then we need to skip the first and last item
-                    // [A](cursor) -> (B) -> (C) -> (D) -> [E](check next)
-                    // (check previous)[A] <- (B) <- (C) <- (D) <- (cursor)[E]
-                    size if size > 2 => {
-                        if index == 0 {
-                            continue;
-                        }
-                        if index == item_size - 1 {
-                            break;
-                        }
-                    }
-                    // otherwise, we need to skip the first item
-                    // when size is 2: [A](cursor) -> (B)
-                    // when size is 1: [A](cursor)
-                    // when size is 0: _
-                    _ => {
-                        if index == 0 {
-                            continue;
-                        }
-                    }
-                }
-            } else if item_size > value.limit as usize {
-                // if size is greater than take, then we need to skip the last item
-                // (A) -> (B) -> (C) -> (D) -> [E](check next)
-                if index == item_size - 1 {
-                    continue;
-                }
-            }
-
-            let cursor = item.cursor();
-            edges.push(Edge::new(cursor, item));
-        }
-
-        if value.before.is_some() {
-            edges.reverse();
-        }
+        let edges = vec![];
 
         connection.edges.extend(edges);
 
         connection
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_graphql::{connection::Connection, SimpleObject};
+    use chrono::NaiveDateTime;
+    use dojo_macros::Model;
+    use googletest::prelude::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_cursor_to_sql_with_1_key() -> anyhow::Result<()> {
+        let created_at = NaiveDateTime::parse_from_str("2024-01-07 12:34:56", "%Y-%m-%d %H:%M:%S")?;
+        let cursor_value = CursorValue {
+            column: "created_at".to_string(),
+            value: crate::model::Value::NaiveDateTime(created_at),
+        };
+        let cursor = Cursor::new(vec![cursor_value]);
+        let (sql, params) = cursor.to_where_stmt(Direction::Asc);
+        println!("sql: {}", sql);
+        println!("params: {:?}", params);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cursor_to_sql_with_2_key() -> anyhow::Result<()> {
+        let created_at = NaiveDateTime::parse_from_str("2024-01-07 12:34:56", "%Y-%m-%d %H:%M:%S")?;
+        let uuid = Uuid::parse_str("ce2087a7-bdbc-4453-9fb8-d4dff3584f3e")?;
+        let cursor = Cursor::new(vec![
+            CursorValue {
+                column: "created_at".to_string(),
+                value: crate::model::Value::NaiveDateTime(created_at),
+            },
+            CursorValue {
+                column: "id".to_string(),
+                value: crate::model::Value::Uuid(uuid),
+            },
+        ]);
+        let (sql, params) = cursor.to_where_stmt(Direction::Asc);
+        println!("sql: {}", sql);
+        println!("params: {:?}", params);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_cursor() -> anyhow::Result<()> {
+        let created_at = NaiveDateTime::parse_from_str("2024-01-07 12:34:56", "%Y-%m-%d %H:%M:%S")?;
+        let cursor_value = CursorValue {
+            column: "created_at".to_string(),
+            value: crate::model::Value::NaiveDateTime(created_at),
+        };
+        let cursor = Cursor::new(vec![cursor_value]);
+        let encoded = cursor.encode();
+
+        let decoded = Cursor::decode(&encoded).unwrap();
+        assert_that!(
+            decoded,
+            pat!(Cursor {
+                values: contains_each![pat!(CursorValue {
+                    column: eq("created_at".to_string()),
+                    value: eq(crate::model::Value::NaiveDateTime(created_at)),
+                }),],
+            })
+        );
+
+        Ok(())
     }
 }

@@ -1,9 +1,12 @@
 use syn::{Data, Fields};
 
+const SUPPORTED_TYPES: &[&str] = &["i32", "i64", "Uuid", "String", "NaiveDateTime"];
+
 #[derive(deluxe::ExtractAttributes)]
 #[deluxe(attributes(dojo))]
 struct ModelStructAttrs {
     name: String,
+    sort_keys: Vec<String>,
 }
 
 pub fn expand_model_derive(
@@ -13,7 +16,7 @@ pub fn expand_model_derive(
     let mut ast = syn::parse2::<syn::DeriveInput>(input)?;
 
     // Extract the attributes from the input
-    let ModelStructAttrs { name } = deluxe::extract_attributes(&mut ast)?;
+    let ModelStructAttrs { name, sort_keys } = deluxe::extract_attributes(&mut ast)?;
 
     // Define impl variables
     let ident = &ast.ident;
@@ -36,6 +39,24 @@ pub fn expand_model_derive(
         .map(|i| i.to_string())
         .collect::<Vec<_>>();
 
+    let supported_values = fields
+        .iter()
+        .map(|f| {
+            let ty = &f.ty;
+            let ident = f.ident.clone().unwrap();
+
+            if SUPPORTED_TYPES.contains(&quote::quote!(#ty).to_string().as_str()) {
+                quote::quote! {
+                    stringify!(#ident) => Some(dojo_orm::Value::from(&self.#ident)),
+                }
+            } else {
+                quote::quote! {
+                    stringify!(#ident) => None,
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
     // Define the output tokens
     let expanded = quote::quote! {
         #[async_trait::async_trait]
@@ -54,6 +75,17 @@ pub fn expand_model_derive(
                 Ok(#ident {
                     #(#field_idents: row.try_get(stringify!(#field_idents))?),*
                 })
+            }
+
+            fn get_value(&self, column: &str) -> Option<dojo_orm::Value> {
+                match column {
+                    #(#supported_values)*
+                    _ => None,
+                }
+            }
+
+            fn sort_keys() -> Vec<String> {
+                vec![#(#sort_keys.to_string()),*]
             }
         }
     };

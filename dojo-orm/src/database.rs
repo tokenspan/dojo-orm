@@ -1,11 +1,16 @@
+use crate::execution::Execution;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use tracing::debug;
 
 use crate::model::{Model, UpdateModel};
-use crate::pagination::{Cursor, CursorExt};
+use crate::pagination::Cursor;
 use crate::pool::*;
-use crate::where_select::WhereSelectClause;
-use crate::where_update::WhereUpdateClause;
+use crate::predicates::eq;
+use crate::query_builder::{QueryBuilder, QueryType};
+use crate::where_delete::WhereDelete;
+use crate::where_select::WhereSelect;
+use crate::where_update::WhereUpdate;
 
 #[derive(Clone)]
 pub struct Database {
@@ -24,110 +29,77 @@ impl Database {
         Ok(self.pool.get().await?)
     }
 
-    pub fn bind<T>(&self) -> WhereSelectClause<T>
+    pub fn bind<T>(&self) -> WhereSelect<T>
     where
-        T: Model + CursorExt<Cursor> + Sync + Send,
+        T: Model + Debug,
     {
-        WhereSelectClause {
+        WhereSelect {
             pool: &self.pool,
-            is_delete: false,
+            columns: T::COLUMNS,
             params: vec![],
-            ops: vec![],
-            _t: PhantomData,
+            predicates: vec![],
+            _t: PhantomData::<T>,
         }
     }
 
-    pub async fn insert<T: Model>(&self, data: &T) -> anyhow::Result<T> {
-        let mut query = "INSERT INTO ".to_string();
-        query.push_str(T::NAME);
-        query.push_str(" (");
-        query.push_str(T::COLUMNS.join(", ").as_str());
-        query.push_str(") VALUES (");
-
-        let mut params_index = 1;
-        let mut params = vec![];
-        let mut values = vec![];
-        for param in data.params() {
-            values.push(format!("${}", params_index));
-            params.push(param);
-            params_index += 1;
-        }
-        query.push_str(values.join(", ").as_str());
-        query.push_str(") RETURNING ");
-        query.push_str(T::COLUMNS.join(", ").as_str());
-
-        let conn = self.pool.get().await?;
-        debug!("query: {}, params: {:?}", query, params);
-        let row = conn.query_one(query.as_str(), &params).await?;
-
-        Ok(T::from_row(row)?)
-    }
-
-    pub async fn insert_many<T: Model>(&self, data: &[T]) -> anyhow::Result<Vec<T>> {
-        if data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let mut query = "INSERT INTO ".to_string();
-        query.push_str(T::NAME);
-        query.push_str(" (");
-        query.push_str(T::COLUMNS.join(", ").as_str());
-        query.push_str(") VALUES ");
-
-        let mut params_index = 1;
-        let mut params = vec![];
-        let mut list_values = vec![];
-        for item in data {
-            let mut values = vec![];
-            let mut query = "(".to_string();
-            for param in item.params() {
-                values.push(format!("${}", params_index));
-                params.push(param);
-                params_index += 1;
-            }
-            query.push_str(values.join(", ").as_str());
-            query.push_str(")");
-
-            list_values.push(query);
-        }
-        query.push_str(list_values.join(", ").as_str());
-        query.push_str(" RETURNING ");
-        query.push_str(T::COLUMNS.join(", ").as_str());
-
-        let conn = self.pool.get().await?;
-        debug!("query: {}, params: {:?}", query, params);
-        let row = conn.query(query.as_str(), &params).await?;
-
-        let mut rows = vec![];
-        for row in row {
-            rows.push(T::from_row(row)?);
-        }
-
-        Ok(rows)
-    }
-
-    pub fn update<'a, T: Model, U: UpdateModel>(
-        &'a self,
-        data: &'a U,
-    ) -> WhereUpdateClause<'a, T, U> {
+    pub async fn insert<T>(&self, data: &T) -> anyhow::Result<T>
+    where
+        T: Model + Debug,
+    {
         let params = data.params();
-        let columns = data.columns();
-        WhereUpdateClause {
+        let qb = QueryBuilder::builder()
+            .table_name(T::NAME)
+            .columns(T::COLUMNS)
+            .params(&params.as_slice())
+            .ty(QueryType::Insert)
+            .is_returning(true)
+            .build();
+
+        let execution: Execution<T> = Execution::new(&self.pool, &qb);
+        execution.first_or_throw().await
+    }
+
+    pub async fn insert_many<T>(&self, data: &[T]) -> anyhow::Result<Vec<T>>
+    where
+        T: Model + Debug,
+    {
+        let mut params = vec![];
+        for d in data {
+            params.extend(d.params());
+        }
+
+        let qb = QueryBuilder::builder()
+            .table_name(T::NAME)
+            .columns(T::COLUMNS)
+            .params(&params.as_slice())
+            .ty(QueryType::Insert)
+            .is_returning(true)
+            .build();
+
+        let execution: Execution<T> = Execution::new(&self.pool, &qb);
+        execution.all().await
+    }
+
+    pub fn update<'a, T, U>(&'a self, data: &'a U) -> WhereUpdate<'a, T>
+    where
+        T: Model + Debug,
+        U: UpdateModel + Debug,
+    {
+        WhereUpdate {
             pool: &self.pool,
-            columns: columns.clone(),
-            params: params.clone(),
-            ops: vec![],
+            params: data.params(),
+            predicates: vec![],
             _t: PhantomData,
-            _u: PhantomData,
         }
     }
 
-    pub fn delete<T: Model>(&self) -> WhereSelectClause<T> {
-        WhereSelectClause {
+    pub fn delete<T>(&self) -> WhereDelete<T>
+    where
+        T: Model + Debug,
+    {
+        WhereDelete {
             pool: &self.pool,
-            is_delete: true,
-            params: vec![],
-            ops: vec![],
+            predicates: vec![],
             _t: PhantomData,
         }
     }
